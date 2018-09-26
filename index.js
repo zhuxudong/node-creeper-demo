@@ -6,11 +6,6 @@ let superagent = require('superagent-charset');
 let projectUrl = "http://www.wzfg.com/realweb/stat/ProjectSellingList.jsp?";
 let infoUrl = "http://www.wzfg.com/realweb/stat/FirstHandProjectInfo.jsp?"
 
-function formatTimeNow() {
-  let time = new Date();
-  return time.getFullYear() + "_" + (time.getMonth() + 1) + "_" + time.getDate() + "_" + time.getHours() + "_" + time.getMinutes()
-}
-
 function get(url) {
   return new Promise((resolve, reject) => {
     superagent.get(url).charset("gbk").end((err, sres) => {
@@ -30,45 +25,111 @@ function createExcel(filename, data) {
     fs.mkdirSync("excel")
   }
 
-  // fs.writeFileSync("./excel/" + formatTimeNow() + ".xlsx", xlsx.build(data), "binary")
   fs.writeFileSync("./excel/" + filename + ".xlsx", xlsx.build(data), "binary")
   console.log("已生成 " + filename + ".xlsx ......");
 }
 
-function getProjectSellingList(pageIndex) {
-  console.log("正在读取第" + (pageIndex + 1) + "页数据")
+function getProjectSellingList(min, max) {
+  console.log("正在读取第" + min + "页数据")
   let data = [{
     name: "项目概况",
-    data: [
-      ["开发单位", "预售许可证号", "发证日期", "所在地区", "样本区域", "项目测算面积", "项目名称", "项目地址", "开盘日期", "售楼地址", "售楼电话"],
-      [3, 4, 5]
-    ]
+    data: []
   }, {
     name: "分类价格",
-    data: [
-      [1, 2, 3],
-      [3, 4, 5]
-    ]
+    data: []
   }, {
     name: "销售情况",
-    data: [
-      [1, 2, 3],
-      [3, 4, 5]
-    ]
+    data: []
   }];
-  get(projectUrl + "currPage=" + pageIndex).then(($) => {
-    let $trs = $("tr[onclick]");
-    $trs.each((i, tr) => {
-      let projectName = $(tr).find("td:nth-child(2)").html();
-      let onclick = $(tr).attr("onclick");
-      let query = onclick.match(/projectID=\d*/)[0];
-      get(infoUrl + query).then(($) => {
-        console.log($(`td:contains('开发单位')`)).html()
-        // createExcel(projectName, data)
+
+  function initData($, table, data) {
+    table.find("> tbody").children().each((i, tr) => {
+      let trArr = []
+      $(tr).find("> td").each((i, td) => {
+        let $td = $(td);
+        if ($td.attr("rowspan") || $td.attr("colspan")) {
+          return
+        }
+        trArr.push($td.text())
       })
+      data.push(trArr)
+    })
+  }
+
+  get(projectUrl + "currPage=" + (min - 1)).then(($) => {
+    if (max === true) {
+      if (/goPage\((\d*)\)/.test($("a[href*=goPage]").last().attr("href"))) {
+        max = RegExp.$1
+      }
+    }
+    let $trs = $("tr[onclick]");
+    let promises = [];
+    $trs.each((i, tr) => {
+      let promise = new Promise((resolve) => {
+        //项目名字
+        let projectName = $(tr).find("td:nth-child(2)").html();
+        let onclick = $(tr).attr("onclick");
+        let query = onclick.match(/projectID=\d*/)[0];
+        get(infoUrl + query).then(($) => {
+          let table1 = $("table.ab")
+          let table2 = $("table:not(.MsoNormalTable)").eq(5);
+          let table3 = $("table:not(.MsoNormalTable)").eq(7);
+          initData($, table1, data[0].data)
+          initData($, table2, data[1].data)
+          initData($, table3, data[2].data)
+          createExcel(projectName, data)
+          resolve();
+        })
+      })
+      promises.push(promise)
+    })
+    Promise.all(promises).then(() => {
+      if (min < max) {
+        getProjectSellingList(min + 1, max)
+      }
     })
   })
-
 }
 
-getProjectSellingList(0)
+function getPage() {
+  return new Promise((resolve, reject) => {
+    let pages = null;
+    let str = process.argv[2]
+    if (str) {
+      let split = null, min = 1, max = 1;
+      if (/^(\d*)$/.test(str)) {
+        min = max = RegExp.$1;
+      } else if (split = str.split("-")) {
+        if (split.length === 2) {
+          min = Math.min(split[0], split[1])
+          max = Math.max(split[0], split[1])
+        } else {
+          reject();
+        }
+      }
+      resolve({
+        min: min,
+        max: max
+      })
+    }
+    resolve(pages)
+
+
+  })
+}
+
+getPage().then((pages) => {
+  if (!pages) {
+    console.log("开始读取所有项目")
+    getProjectSellingList(1, true)
+  } else {
+    if (pages.min === pages.max) {
+      console.log("开始读取第" + pages.min + "页项目")
+    } else {
+      console.log("开始读取第" + pages.min + "-" + pages.max + "页项目")
+    }
+    getProjectSellingList(pages.min, pages.max)
+  }
+}).catch(() => {
+  console.log("请输入正确的页数，如\n node index.js 1-100,\n node index.js 1")
+})
