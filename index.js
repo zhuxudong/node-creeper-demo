@@ -31,17 +31,6 @@ function createExcel(filename, data) {
 
 function getProjectSellingList(min, max) {
   console.log("正在读取第" + min + "页数据")
-  let data = [{
-    name: "项目概况",
-    data: []
-  }, {
-    name: "分类价格",
-    data: []
-  }, {
-    name: "销售情况",
-    data: []
-  }];
-
   function initData($, table, data) {
     table.find("> tbody").children().each((i, tr) => {
       let trArr = []
@@ -71,6 +60,17 @@ function getProjectSellingList(min, max) {
         let onclick = $(tr).attr("onclick");
         let query = onclick.match(/projectID=\d*/)[0];
         get(infoUrl + query).then(($) => {
+          let data = [{
+            name: "项目概况",
+            data: []
+          }, {
+            name: "分类价格",
+            data: []
+          }, {
+            name: "销售情况",
+            data: []
+          }];
+
           let table1 = $("table.ab")
           let table2 = $("table:not(.MsoNormalTable)").eq(5);
           let table3 = $("table:not(.MsoNormalTable)").eq(7);
